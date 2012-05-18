@@ -1,4 +1,6 @@
 /***************************************************************************
+ *   Copyright (C) 2012 by mfs6174                                         *
+ *   mfs6174@gmail.com                                                     *
  *   Copyright (C) 2010 by lwp                                             *
  *   levin108@gmail.com                                                    *
  *                                                                         *
@@ -25,15 +27,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 using namespace std;
 #define BUFLEN 1024
- 
+const int waittime=25;
+
 int   password_inputed = 0;
 int   mobileno_inputed = 0;
 int   tono_inputed = 0;
 int   message_inputed = 0;
 User *user;
 pthread_t th;
+int sigrelog=0;
+int failcount=0;
  
 static void usage(char *argv[]);
  
@@ -222,7 +230,10 @@ void recvMsg(User *user){
   fd_set fd_read;
   int ret,err;
   Message *sipmsg;
-  for(;;){
+  for(;;)
+  {
+    if (sigrelog)
+      break;
     FD_ZERO(&fd_read);
     FD_SET(sip->tcp->socketfd, &fd_read);
     ret = select (sip->tcp->socketfd+1, &fd_read, NULL, NULL, NULL);
@@ -234,6 +245,15 @@ void recvMsg(User *user){
       continue;
     }
     msg = fetion_sip_listen(sip,&err);
+    if (err)
+    {
+      failcount++;
+      if (failcount>5)
+      {
+        sigrelog=1;
+        break;
+      }
+    }
     pos = msg;
     while(pos != NULL){
       type = fetion_sip_get_type(pos->message);
@@ -281,14 +301,16 @@ void recvMsg(User *user){
   }
 }
 
-void *myThread(void *user){
-  sleep(70);
-  for(;;){
-    if(fetion_user_keep_alive((User *)user) < 0){
-      debug_error("网络连接已断开,请重新登录");
-      return NULL;
+void *myKeepalive(void *user){
+  sleep(waittime);
+  for(;;)
+  {
+    if(fetion_user_keep_alive((User *)user) < 0 || sigrelog)
+    {
+      debug_error("已断开,请重新登录");
+      pthread_exit(NULL);
     }
-    sleep(70);
+    sleep(waittime);
   }
   pthread_exit(NULL);
 } 
@@ -300,14 +322,25 @@ int main(int argc, char *argv[])
   char password[BUFLEN];
   char receiveno[BUFLEN];
   char message[BUFLEN];
+  string cnum,cpass;
  
   memset(mobileno, 0, sizeof(mobileno));
   memset(password, 0, sizeof(password));
   memset(receiveno, 0, sizeof(receiveno));
   memset(message, 0, sizeof(message));
  
-  while((ch = getopt(argc, argv, "f:p:t:d:")) != -1) {
+  while((ch = getopt(argc, argv, "c:f:p:t:d:")) != -1) {
     switch(ch) {
+    case 'c':
+      {
+        mobileno_inputed = 1;
+        password_inputed = 1;
+        ifstream inf(optarg);
+        inf>>cnum>>cpass;
+        strncpy(mobileno, cnum.c_str(), sizeof(mobileno) - 1);
+        strncpy(password, cpass.c_str(), sizeof(password) - 1);
+        break;
+      }
     case 'f':
       mobileno_inputed = 1;
       strncpy(mobileno, optarg, sizeof(mobileno) - 1);	
@@ -347,9 +380,12 @@ int main(int argc, char *argv[])
     pthread_attr_t * thAttr = NULL;
     pthread_t tid;
     int ret;
-    pthread_create(&tid, thAttr, myThread, user); 
+    failcount=0;
+    sigrelog=0;
+    pthread_create(&tid, thAttr, myKeepalive, user);
     recvMsg(user);
     pthread_join(tid,NULL);
+    cout<<"Fail"<<endl;
   }
   fetion_user_free(user);
   return 0;
