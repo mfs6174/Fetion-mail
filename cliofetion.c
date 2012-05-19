@@ -42,6 +42,7 @@ User *user;
 pthread_t th;
 int sigrelog=0;
 int failcount=0;
+string ads("fake@false.fake");
  
 static void usage(char *argv[]);
  
@@ -149,16 +150,16 @@ int fx_login(const char *mobileno, const char *password)
   fetion_user_save(user);
   fetion_contact_save(user);
  
-  /* /\* these... fuck the fetion protocol *\/ */
-  /* struct timeval tv; */
-  /* tv.tv_sec = 1; */
-  /* tv.tv_usec = 0; */
-  /* char buf[1024]; */
-  /* if(setsockopt(user->sip->tcp->socketfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1) { */
-  /* 	debug_error("settimeout"); */
-  /* 	return 1; */
-  /* } */
-  /* tcp_connection_recv(user->sip->tcp, buf, sizeof(buf)); */
+  //\* these... fuck the fetion protocol *\/ */
+  struct timeval tv;
+  tv.tv_sec = 1;
+  tv.tv_usec = 0;
+  char buf[1024];
+  if(setsockopt(user->sip->tcp->socketfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1) {
+  	debug_error("settimeout");
+  	return 1;
+  }
+  tcp_connection_recv(user->sip->tcp, buf, sizeof(buf));
   StateType sttt=P_ONLINE;
   if (fetion_user_set_state(user,sttt)==-1)
   {
@@ -223,6 +224,21 @@ int send_message(const char *mobileno, const char *receiveno, const char *messag
   return 0;
 }
 
+int mysendmail(const char mailto[],const char subj[],const char cont[])
+{
+  static string mailfrom="fetion@mfs6174.org";
+  FILE *fp=popen("/usr/lib/sendmail -t > /dev/null","w");
+  if (fp==NULL)
+    return -1;
+  fprintf(fp,"To: %s\n",mailto);
+  fprintf(fp,"From: %s\n",mailfrom.c_str());
+  fprintf(fp, "Content-type: %s\n", "text/html;charset=utf-8");
+  fprintf(fp,"Subject: %s\n",subj);
+  fprintf(fp,"%s\n",cont);
+  pclose(fp);
+  return 0;
+}
+
 void recvMsg(User *user){
   FetionSip *sip = user->sip;
   int type;
@@ -237,10 +253,13 @@ void recvMsg(User *user){
     FD_ZERO(&fd_read);
     FD_SET(sip->tcp->socketfd, &fd_read);
     ret = select (sip->tcp->socketfd+1, &fd_read, NULL, NULL, NULL);
-    if (ret == -1 || ret == 0) {
+    if (ret == -1 || ret == 0)
+    {
+      err=1;
       debug_info ("Error.. to read socket");
     }
-    if (!FD_ISSET (sip->tcp->socketfd, &fd_read)) {
+    if (!FD_ISSET (sip->tcp->socketfd, &fd_read))
+    {
       sleep (100);
       continue;
     }
@@ -280,20 +299,17 @@ void recvMsg(User *user){
         //nothing
         break;
       }
-      
-      int position = strspn(pos->message, "M");
-      if(position == 1)
+      //int position = strspn(pos->message, "M");
+      char * pnt=strstr(pos->message,"sip:");
+      if(pnt!=NULL)//position == 1)
       {
-        //sendmail
-        FILE *fp=popen("/usr/lib/sendmail -t > /dev/null","w");
-        fprintf(fp,"To: %s\n","mfs6174@gmail.com");
-        fprintf(fp,"From: %s\n","fetion@mfs6174.org");
-        fprintf(fp, "Content-type: %s\n", "text/html;charset=utf-8");
-        fprintf(fp,"Subject: %s\n","新的飞信消息");
-        fprintf(fp,"%s\n",pos->message);
-        pclose(fp);
-        printf("%s\n",pos->message);
+        mysendmail(ads.c_str(),"新的飞信消息",pos->message);
+        ofstream messout("message.log",ofstream::ate|ofstream::app);
+        messout<<pos->message<<endl<<endl;
+        printf("%s\n",pos->message);      
       }
+      else
+        debug_info(pos->message);
       pos = pos->next;
     }
     if(msg != NULL)
@@ -301,15 +317,21 @@ void recvMsg(User *user){
   }
 }
 
-void *myKeepalive(void *user){
+void *myKeepalive(void *user)
+{
   sleep(waittime);
   for(;;)
   {
-    if(fetion_user_keep_alive((User *)user) < 0 || sigrelog)
+    if (sigrelog)
+      pthread_exit(NULL);
+    if(fetion_user_keep_alive((User *)user) < 0)
     {
-      debug_error("已断开,请重新登录");
+      debug_error("Keep alive fail!");
+      sigrelog=1;
       pthread_exit(NULL);
     }
+    if (sigrelog)
+      pthread_exit(NULL);
     sleep(waittime);
   }
   pthread_exit(NULL);
@@ -336,7 +358,7 @@ int main(int argc, char *argv[])
         mobileno_inputed = 1;
         password_inputed = 1;
         ifstream inf(optarg);
-        inf>>cnum>>cpass;
+        inf>>cnum>>cpass>>ads;
         strncpy(mobileno, cnum.c_str(), sizeof(mobileno) - 1);
         strncpy(password, cpass.c_str(), sizeof(password) - 1);
         break;
@@ -361,17 +383,15 @@ int main(int argc, char *argv[])
       break;
     }
   }
- 
   if(!mobileno_inputed || !password_inputed )
   {
     usage(argv);
     return 1;
   }
- 
-  if(fx_login(mobileno, password))
-    return 1;
   if (message_inputed)
   {
+    if(fx_login(mobileno, password))
+      return 1;
     if(send_message(mobileno, receiveno, message))
       return 1;
   }
@@ -379,13 +399,39 @@ int main(int argc, char *argv[])
   {
     pthread_attr_t * thAttr = NULL;
     pthread_t tid;
-    int ret;
-    failcount=0;
-    sigrelog=0;
-    pthread_create(&tid, thAttr, myKeepalive, user);
-    recvMsg(user);
-    pthread_join(tid,NULL);
-    cout<<"Fail"<<endl;
+    int ret=0,wait4login=10,isdown=0;
+    for (;;)
+    {
+      failcount=0;
+      sigrelog=0;
+      ret=fx_login(mobileno, password);
+      if (ret)
+      {
+        debug_info("Login fail!Will login again in %ds",wait4login);
+         if (wait4login>640)
+        {
+          isdown=1;
+          mysendmail(ads.c_str(),"您的飞信侦听转发服务离线了","您的飞信转发服务因过去的20分钟内连续登陆失败而下线,系统会继续尝试登录,并在成功后通知您.如果有疑问,请登录服务器人工检查.");
+        }
+        sleep(wait4login);
+        if (!isdown)
+          wait4login*=2;
+        continue;
+      }
+      else
+        if (isdown)
+        {
+          mysendmail(ads.c_str(),"您的飞信侦听转发服务恢复了","您的飞信转发服务现在已经恢复运行");
+          isdown=0;
+          wait4login=10;
+        }
+      pthread_create(&tid, thAttr, myKeepalive, user);
+      recvMsg(user);
+      pthread_join(tid,NULL);
+      fetion_user_free(user);
+      debug_info("Listen fail!Will relogin in 30s!");
+      sleep(30);
+    }
   }
   fetion_user_free(user);
   return 0;
@@ -393,5 +439,5 @@ int main(int argc, char *argv[])
  
 static void usage(char *argv[])
 {
-  fprintf(stderr, "Usage:%s -f mobileno -p password -t receive_mobileno -d message\n", argv[0]);
+  fprintf(stderr, "Usage:%s -c Num&PassFile -f mobileno -p password -t receive_mobileno -d message\n", argv[0]);
 }
