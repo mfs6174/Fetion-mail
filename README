@@ -1,4 +1,4 @@
-Fetion message forward via email based on libofetion
+Fetion message forward to email
 Linux下模拟中国移动飞信的计算机客户端登陆,侦听飞信消息,通过email转发的命令行守护程序.
 
 来源:
