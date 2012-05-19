@@ -300,10 +300,25 @@ void recvMsg(User *user){
         break;
       }
       //int position = strspn(pos->message, "M");
-      char * pnt=strstr(pos->message,"sip:");
-      if(pnt!=NULL)//position == 1)
+      char * pntsip=strstr(pos->message,"sip:"),* pntdm=strstr(pos->message,"D:");
+      if(pntsip!=NULL&&pntdm!=NULL)//position == 1)
       {
-        mysendmail(ads.c_str(),"新的飞信消息",pos->message);
+        string pmsg(pos->message),subj("新的飞信消息"),ctt(" ");
+        int tp=pmsg.find("D:"),tph=pmsg.find("GMT");
+        if (tp!=string::npos && tph!=string::npos)
+          subj=subj+pmsg.substr(tp,tph-tp+3);
+        tp=pmsg.find("XI:");
+        int kp=-1;
+        if (tp!=string::npos)
+          kp=tp+36;
+        else
+          if (tph!=string::npos)
+            kp=tph+4;
+        if (kp>0)
+          ctt=pmsg.substr(kp);
+        else
+          ctt=pmsg;
+        mysendmail(ads.c_str(),subj.c_str(),ctt.c_str());
         ofstream messout("message.log",ofstream::ate|ofstream::app);
         messout<<pos->message<<endl<<endl;
         printf("%s\n",pos->message);      
@@ -439,5 +454,5 @@ int main(int argc, char *argv[])
  
 static void usage(char *argv[])
 {
-  fprintf(stderr, "Usage:%s -c Num&PassFile -f mobileno -p password -t receive_mobileno -d message\n", argv[0]);
+  fprintf(stderr, "Usage:%s -c Num&PassMailFile -f mobileno -p password -t receive_mobileno -d message\n", argv[0]);
 }
