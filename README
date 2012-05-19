@@ -1,1 +1,20 @@
-Fetion message forward via email based on libofetion 
+Fetion message forward via email based on libofetion
+Linux下模拟中国移动飞信的计算机客户端登陆,侦听飞信消息,通过email转发的命令行守护程序.
+
+来源:
+1.使用飞信协议库libofetion 作者@levin108 主页http://code.google.com/p/ofetion/
+2.参考openfetion-notify 作者Leon GAO 代码地址http://www.lostleon.com/blog/2010/09/how-to-listen-fetion-msg-and-forward-to-email/
+3.参考clifetion 作者和主页同1.
+
+特性:
+1.登录飞信并保持在线(修改心跳间隔为25s).
+2.侦听消息发送到指定的邮箱,主题中包含消息时间,邮件正文为消息正文.
+3.如果掉线,会自动重新登录.
+4.如果多次连续登录失败,会发送提醒邮件,一段时间以后重新登录成功也会发送邮件告知.
+
+使用注意:
+1.安装libofetion及相应开发文件,在代码目录执行./build.sh 编译得到fetion-mail 
+2.建立一个文件file,第一行为飞信帐号,第二行为飞信密码,第三行为接收邮箱,执行./fetion-mail -c file 启动程序,需手动放入后台.
+3.通过调用/usr/lib/sendmail 来发送邮件,需要配置邮件服务器(如debian中为exim4,需通过dpkg-reconfigure exim4-config 开启向外网发送邮件的功能),仅在debian中测试通过.
+4.由于发送邮件的方式比较特殊,可能会被识别为垃圾邮件,请设置fetion@mfs6174.org为白名单(此发件人地址如果需要更换请修改代码).
+
