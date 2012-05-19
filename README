@@ -4,7 +4,7 @@ Linux下模拟中国移动飞信的计算机客户端登陆,侦听飞信消息,�
 来源:
 1.使用飞信协议库libofetion 作者@levin108 主页http://code.google.com/p/ofetion/
 2.参考openfetion-notify 作者Leon GAO 代码地址http://www.lostleon.com/blog/2010/09/how-to-listen-fetion-msg-and-forward-to-email/
-3.参考clifetion 作者和主页同1.
+3.参考cliofetion 作者和主页同1.
 
 特性:
 1.登录飞信并保持在线(修改心跳间隔为25s).
